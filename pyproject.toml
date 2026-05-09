@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-jobs-pipeline"
+version = "0.1.0"
+description = "Data engineering pipeline for the Data Jobs technical assessment."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+authors = [
+	{ name = "Juan Hurtado" }
+]
+dependencies = [
+	"dbt-postgres>=1.10,<2.0",
+	"pandas>=2.2,<4.0",
+	"psycopg[binary]>=3.2,<4.0",
+	"python-dotenv>=1.0,<2.0",
+	"sqlalchemy>=2.0,<3.0",
+]
+
+[project.scripts]
+ingest-jobs = "ingestion.ingest:main"
+
+[project.optional-dependencies]
+dev = [
+	"pytest>=8.0,<10.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra"]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ingestion*"]
