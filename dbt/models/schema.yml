@@ -1,0 +1,351 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Landing zone for CSV ingestion
+    tables:
+      - name: jobs
+        description: Raw job postings data from CSV
+        columns:
+          - name: id
+            description: Raw record ID (surrogate)
+          - name: company_name
+            description: Employer company name
+          - name: job_title
+            description: Full job title text
+          - name: job_title_short
+            description: Job title category (shortened)
+          - name: job_location
+            description: Job location as text (raw)
+          - name: search_location
+            description: Search parameter used to scrape the posting
+          - name: job_country
+            description: Country where job is posted
+          - name: job_via
+            description: Platform/channel where posting appeared
+          - name: job_schedule_type
+            description: Employment type (Full-time, Part-time, etc.)
+          - name: job_work_from_home
+            description: Whether remote work is offered
+          - name: job_no_degree_mention
+            description: Whether degree is not required
+          - name: job_health_insurance
+            description: Whether health insurance is offered
+          - name: salary_rate
+            description: Salary period (year, hour, month)
+          - name: salary_year_avg
+            description: Average annual salary
+          - name: salary_hour_avg
+            description: Average hourly rate
+          - name: job_skills
+            description: Job skills as Python list serialized to text
+          - name: job_type_skills
+            description: Job skills grouped by category (Python dict serialized to text)
+          - name: ingested_at
+            description: When the record was ingested to raw.jobs
+
+models:
+  - name: stg_raw_jobs
+    description: |
+      Staging layer: deduplicated and normalized raw job postings.
+      
+      Deduplication strategy:
+      - Business key excludes job_skills and job_type_skills
+      - Duplicate records (same company, title, location, date, etc.) are collapsed
+      - Skills are aggregated and deduplicated across all duplicates
+      - One row per unique job posting context
+    columns:
+      - name: raw_job_id
+        description: Reference to raw.jobs.id
+        tests:
+          - not_null
+      - name: business_key
+        description: MD5 hash of core posting attributes (excluding skills)
+        tests:
+          - not_null
+          - unique
+      - name: job_title_short
+        description: Job title category
+      - name: job_title
+        description: Full job title text
+      - name: job_location
+        description: Job location (raw text)
+      - name: job_via
+        description: Platform name
+      - name: job_schedule_type
+        description: Employment type
+      - name: job_work_from_home
+        description: Remote work flag
+      - name: job_posted_date
+        description: Date job was posted
+      - name: job_skills_array
+        description: Deduplicated array of skills
+      - name: job_type_skills
+        description: Grouped skills (serialized)
+      - name: company_name
+        description: Employer name
+
+  - name: stg_job_skills_exploded
+    description: |
+      Staging layer: exploded job_skills array.
+      One row per skill in the job_skills list.
+    columns:
+      - name: skill_assignment_id
+        description: Unique ID for this skill assignment
+        tests:
+          - unique
+          - not_null
+      - name: raw_job_id
+        description: Reference to stg_raw_jobs
+      - name: skill_name
+        description: Skill text
+      - name: skill_category_hint
+        description: Default category for ungrouped skills
+
+  - name: stg_job_type_skills_exploded
+    description: |
+      Staging layer: exploded job_type_skills dictionary.
+      One row per skill in the job_type_skills groups.
+    columns:
+      - name: grouped_skill_assignment_id
+        description: Unique ID for this grouped skill assignment
+      - name: raw_job_id
+        description: Reference to stg_raw_jobs
+      - name: skill_name
+        description: Skill text
+      - name: skill_category
+        description: Category from the original grouping (e.g., 'programming', 'cloud')
+
+  - name: company
+    description: |
+      Dimension: unique companies.
+      3NF: eliminates repetition of company_name across thousands of postings.
+      Ready for future enrichment (sector, size, URL, etc.).
+    columns:
+      - name: company_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: company_name
+        description: Company name
+        tests:
+          - unique
+          - not_null
+
+  - name: country
+    description: |
+      Dimension: unique countries.
+      3NF: normalizes geographic dimension.
+    columns:
+      - name: country_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: country_name
+        description: Country name
+        tests:
+          - unique
+          - not_null
+
+  - name: platform
+    description: |
+      Dimension: unique job posting platforms/channels.
+      Examples: LinkedIn, BeBee, Indeed, etc.
+    columns:
+      - name: platform_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: platform_name
+        description: Platform/channel name (e.g., 'LinkedIn')
+        tests:
+          - unique
+          - not_null
+
+  - name: schedule_type
+    description: |
+      Dimension: employment schedule types.
+      Controlled vocabulary: Full-time, Part-time, Contract, etc.
+    columns:
+      - name: schedule_type_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: schedule_name
+        description: Schedule type name
+        tests:
+          - unique
+          - not_null
+
+  - name: job_title_category
+    description: |
+      Dimension: job title categories (shortened titles).
+      Examples: 'Data Scientist', 'Data Engineer', 'Analyst', etc.
+    columns:
+      - name: title_cat_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: job_title_short
+        description: Job title category
+        tests:
+          - unique
+          - not_null
+
+  - name: salary_rate_type
+    description: |
+      Dimension: salary period types.
+      Controlled vocabulary: 'year', 'hour', 'month'
+    columns:
+      - name: rate_type_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: rate_name
+        description: Salary period (e.g., 'year', 'hour')
+        tests:
+          - unique
+          - not_null
+
+  - name: skill
+    description: |
+      Dimension: unique skills.
+      Canonical skill dictionary sourced from both job_skills and job_type_skills.
+    columns:
+      - name: skill_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: skill_name
+        description: Skill name (e.g., 'python', 'sql', 'aws')
+        tests:
+          - unique
+          - not_null
+
+  - name: skill_category
+    description: |
+      Dimension: skill categories.
+      Groups from job_type_skills: 'programming', 'cloud', 'databases', etc.
+    columns:
+      - name: skill_cat_id
+        description: Surrogate key
+        tests:
+          - unique
+          - not_null
+      - name: category_name
+        description: Category name
+        tests:
+          - unique
+          - not_null
+
+  - name: job_posting
+    description: |
+      Core table: job postings in 3NF.
+      Central entity: one row per unique job posting.
+      All dimensional attributes normalized to FKs.
+      Salary fields remain inline (low cardinality, high sparsity).
+      Business key derived from: company, title, location, date, schedule, platform, salary values.
+    columns:
+      - name: job_id
+        description: Surrogate key (job posting)
+        tests:
+          - unique
+          - not_null
+      - name: business_key
+        description: Hash of core attributes (deterministic deduplication key)
+        tests:
+          - unique
+          - not_null
+      - name: raw_job_id
+        description: Reference to raw.jobs
+      - name: job_title_full
+        description: Full job title text
+      - name: job_location
+        description: Job location (raw text)
+      - name: search_location
+        description: Search parameter
+      - name: posted_date
+        description: When job was posted
+      - name: work_from_home
+        description: Remote work flag
+      - name: no_degree_mention
+        description: Degree not required flag
+      - name: health_insurance
+        description: Health insurance offered flag
+      - name: salary_year_avg
+        description: Average annual salary
+      - name: salary_hour_avg
+        description: Average hourly rate
+      - name: salary_month_avg
+        description: Average monthly salary (computed from annual/hourly)
+      - name: company_id
+        description: FK to company
+        tests:
+          - relationships:
+              to: ref('company')
+              field: company_id
+      - name: title_cat_id
+        description: FK to job_title_category
+        tests:
+          - relationships:
+              to: ref('job_title_category')
+              field: title_cat_id
+      - name: schedule_type_id
+        description: FK to schedule_type
+        tests:
+          - relationships:
+              to: ref('schedule_type')
+              field: schedule_type_id
+      - name: platform_id
+        description: FK to platform
+        tests:
+          - relationships:
+              to: ref('platform')
+              field: platform_id
+      - name: country_id
+        description: FK to country
+        tests:
+          - relationships:
+              to: ref('country')
+              field: country_id
+      - name: rate_type_id
+        description: FK to salary_rate_type
+        tests:
+          - relationships:
+              to: ref('salary_rate_type')
+              field: rate_type_id
+
+  - name: job_skill
+    description: |
+      Mart table: many-to-many bridge between job postings and skills.
+      PK: (job_id, skill_id, skill_cat_id)
+      Resolves the M:N relationship and normalizes 1NF violations.
+    columns:
+      - name: job_id
+        description: FK to job_posting
+        tests:
+          - not_null
+          - relationships:
+              to: ref('job_posting')
+              field: job_id
+      - name: skill_id
+        description: FK to skill
+        tests:
+          - not_null
+          - relationships:
+              to: ref('skill')
+              field: skill_id
+      - name: skill_cat_id
+        description: FK to skill_category
+        tests:
+          - not_null
+          - relationships:
+              to: ref('skill_category')
+              field: skill_cat_id

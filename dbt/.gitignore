@@ -1,0 +1,18 @@
+# dbt artifacts
+target/
+dbt_packages/
+*.log
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

@@ -1,0 +1,53 @@
+name: 'data_jobs_pipeline'
+version: '1.0.0'
+config-version: 2
+
+profile: 'data-jobs-pipeline'
+
+model-paths: ['models']
+analysis-paths: ['analyses']
+test-paths: ['tests']
+data-paths: ['data']
+macro-paths: ['macros']
+snapshot-paths: ['snapshots']
+target-path: 'target'
+clean-targets:
+  - 'target'
+  - 'dbt_packages'
+
+models:
+  data_jobs_pipeline:
+    staging:
+      materialized: view
+      schema: staging
+    core:
+      materialized: table
+      schema: core
+    marts:
+      materialized: table
+      schema: marts
+
+seeds:
+  quote_columns: false
+
+on-run-start:
+  - "{{ log('Starting dbt run for data_jobs_pipeline', info=true) }}"
+
+on-run-end:
+  - "{{ log('Completed dbt run for data_jobs_pipeline', info=true) }}"
+
+vars:
+  business_key_columns:
+    - company_name
+    - job_title
+    - job_location
+    - job_posted_date
+    - job_schedule_type
+    - job_via
+    - salary_year_avg
+    - salary_hour_avg
+    - job_work_from_home
+    - job_no_degree_mention
+    - job_health_insurance
+    - job_country
+    - salary_rate
