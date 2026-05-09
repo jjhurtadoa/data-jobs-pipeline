@@ -199,3 +199,127 @@ docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT cou
 docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT id, job_skills, job_type_skills FROM raw.jobs WHERE job_skills IS NOT NULL OR job_type_skills IS NOT NULL LIMIT 5;"
 docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT file_md5, source_name, status, total_rows, inserted_rows, parse_warnings, job_skills_missing, job_skills_invalid, job_type_skills_missing, job_type_skills_invalid, finished_at FROM raw.ingestion_log ORDER BY finished_at DESC LIMIT 10;"
 ```
+
+## Phase 3: Data Modeling in 3NF with dbt (Implemented)
+
+Phase 3 transforms raw job posting data into a **Third Normal Form (3NF)** relational model using dbt.
+
+### Architecture Overview
+
+The model is organized into three layers:
+
+**Staging (`staging/`)**: Parse, normalize, and deduplicate
+- `stg_raw_jobs`: Business key-based deduplication with skill aggregation
+- `stg_job_skills_exploded`: Explode job_skills array into individual rows
+- `stg_job_type_skills_exploded`: Parse job_type_skills dictionary and explode by category
+
+**Core (`core/`)**: Normalized 3NF tables
+- **Dimensions**: company, country, platform, schedule_type, job_title_category, salary_rate_type, skill, skill_category
+- **Central Entity**: job_posting (with all dimensional FKs)
+
+**Marts (`marts/`)**: Analytical layer
+- `job_skill`: M:N bridge resolving job-skill relationships
+
+### Deduplication Strategy
+
+**Problem**: ~200 duplicate job postings with identical content except for skills.
+
+**Solution** (Business Key approach):
+1. Compute MD5 hash excluding skill fields
+2. For each business key, keep the **first (earliest ingested)** record
+3. Aggregate all **unique skills** from all duplicates
+4. Result: 785,741 → ~785,700 unique postings
+
+### 3NF Compliance
+
+This design eliminates redundancy while maintaining referential integrity:
+
+| Entity | Rationale |
+|--------|-----------|
+| `company` | 6,700+ values require normalization |
+| `skill` | 5,000+ unique skills deduplicated across sources |
+| `job_skill` | Resolves multivalued job_skills attribute (1NF violation) |
+| `job_posting` | Central entity; all non-key fields depend only on job_id |
+
+### Setup & Execution
+
+**Install dbt**:
+```bash
+pip install dbt-postgres
+```
+
+**Verify connection**:
+```bash
+cd dbt
+dbt debug
+```
+
+**Build all models** (staging → core → marts):
+```bash
+dbt build
+```
+
+**Run tests** (uniqueness, not-null, referential integrity):
+```bash
+dbt test
+```
+
+**Generate documentation**:
+```bash
+dbt docs generate
+dbt docs serve  # Open at localhost:8000
+```
+
+### Expected Output
+
+After `dbt build`:
+
+| Layer | Table | Rows | Purpose |
+|-------|-------|------|---------|
+| Staging | stg_raw_jobs | ~785,700 | Deduplicated base |
+| Core | company | ~6,726 | Lookup: companies |
+| Core | skill | ~5,000-6,000 | Lookup: skills |
+| Core | job_posting | ~785,700 | Central: jobs with FKs |
+| Marts | job_skill | ~2-3M | Bridge: job → skills |
+
+### Validation Queries
+
+```sql
+-- Check deduplication
+SELECT COUNT(DISTINCT business_key) FROM staging.stg_raw_jobs;
+
+-- Check FK integrity
+SELECT COUNT(*) FROM core.job_posting WHERE company_id IS NULL;
+-- Expected: 0
+
+-- Check bridge deduplication
+SELECT job_id, skill_id, skill_cat_id, COUNT(*) as cnt
+FROM marts.job_skill
+GROUP BY job_id, skill_id, skill_cat_id
+HAVING COUNT(*) > 1;
+-- Expected: 0 rows
+```
+
+### Architecture Decisions
+
+**Why 3NF, not Star Schema?**
+- 3NF eliminates redundancy and maintains data integrity at the source
+- BI consumers can materialize star schema views on top of 3NF as needed
+- Separates analytical data modeling from BI-specific denormalization
+
+**Why Skills Are Separated?**
+- `job_skills` (array) and `job_type_skills` (dictionary) have different structures
+- Exploding and merging them in staging ensures consistency downstream
+- `job_skill` bridge table provides a clean M:N interface
+
+**Why Business Key for Dedup?**
+- Deterministic and reproducible across runs
+- Survives incremental reloads
+- Easier to audit than row-level hashing
+
+### Next Steps
+
+- Monitor dbt test coverage and add custom data quality checks as needed
+- Consider materializing aggregated marts (e.g., skill frequency, salary trends)
+- Implement incremental materialization if processing large data volumes regularly
+```
