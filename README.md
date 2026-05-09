@@ -46,9 +46,10 @@ The raw layer is created in `schema/schema.sql`:
 The raw layer preserves source records as-is.
 
 Phase 2 approach:
-- Deduplication will be implemented in ingestion/staging using a deterministic `source_row_hash`.
-- The hash input will include discriminating fields such as `job_title`, `company_name`, `job_posted_date`, `job_location`, `job_via`, and `search_location`.
-- This preserves raw fidelity while keeping ingestion idempotent.
+- Idempotency is controlled at file level using a deterministic `MD5` fingerprint.
+- Execution metadata is stored in `raw.ingestion_log`.
+- If a completed `file_md5` already exists, ingestion is skipped.
+- `raw.jobs` stores only raw CSV data columns.
 
 Known trade-offs:
 - `job_posted_date` is intentionally kept as `TEXT` in raw; parsing and normalization will be handled in later stages.
@@ -131,4 +132,70 @@ Expected:
 
 ## Next Step
 
-Phase 2 will implement ingestion logic and hash-based idempotency (without changing the Phase 1 infrastructure baseline).
+Phase 3 will focus on relational modeling (3NF), transformations, and data quality checks.
+
+## Phase 2 Ingestion (Implemented)
+
+The ingestion module now reads `data/data_jobs.csv`, parses semi-structured fields, and loads into `raw.jobs`.
+
+The ingestion summary log now separates semi-structured profiling into:
+- `job_skills_missing`
+- `job_skills_invalid`
+- `job_type_skills_missing`
+- `job_type_skills_invalid`
+
+`parse_warnings` counts only invalid (malformed) semi-structured values.
+
+Idempotency strategy:
+- A file-level fingerprint (`MD5`) is computed before loading.
+- File execution history is stored in `raw.ingestion_log` (pipeline metadata only).
+- If a completed fingerprint already exists for that file, ingestion is skipped entirely.
+- `raw.jobs` stores only source CSV data — no pipeline metadata columns.
+- Re-running ingestion on an already-loaded file is safe and produces no duplicate rows.
+
+Implemented components:
+- `ingestion/parsers.py`: parsing and normalization utilities.
+- `ingestion/db.py`: PostgreSQL connection and batch insert helpers.
+- `ingestion/ingest.py`: ingestion flow and CLI/module entrypoint.
+- `ingestion/logging_config.py`: logging bootstrap.
+- `tests/test_parsers.py` and `tests/test_ingest.py`: unit tests.
+
+### Run tests
+
+```bash
+pytest -q
+```
+
+### Run ingestion
+
+```bash
+python -m ingestion.ingest
+```
+
+Optional smoke run with limited rows:
+
+```bash
+INGEST_MAX_ROWS=500 python -m ingestion.ingest
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:INGEST_MAX_ROWS=500
+python -m ingestion.ingest
+```
+
+Run full ingestion:
+
+```powershell
+Remove-Item Env:INGEST_MAX_ROWS -ErrorAction SilentlyContinue
+python -m ingestion.ingest
+```
+
+### Validate loaded data
+
+```bash
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT count(*) FROM raw.jobs;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT id, job_skills, job_type_skills FROM raw.jobs WHERE job_skills IS NOT NULL OR job_type_skills IS NOT NULL LIMIT 5;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT file_md5, source_name, status, total_rows, inserted_rows, parse_warnings, job_skills_missing, job_skills_invalid, job_type_skills_missing, job_type_skills_invalid, finished_at FROM raw.ingestion_log ORDER BY finished_at DESC LIMIT 10;"
+```
