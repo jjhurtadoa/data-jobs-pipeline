@@ -23,5 +23,24 @@ CREATE TABLE IF NOT EXISTS raw.jobs (
 	ingested_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS raw.ingestion_log (
+	id                     BIGSERIAL PRIMARY KEY,
+	file_md5               TEXT NOT NULL UNIQUE,
+	file_path              TEXT NOT NULL,
+	source_name            TEXT NOT NULL,
+	status                 TEXT NOT NULL,
+	total_rows             INTEGER NOT NULL DEFAULT 0,
+	inserted_rows          INTEGER NOT NULL DEFAULT 0,
+	parse_warnings         INTEGER NOT NULL DEFAULT 0,
+	job_skills_missing     INTEGER NOT NULL DEFAULT 0,
+	job_skills_invalid     INTEGER NOT NULL DEFAULT 0,
+	job_type_skills_missing INTEGER NOT NULL DEFAULT 0,
+	job_type_skills_invalid INTEGER NOT NULL DEFAULT 0,
+	started_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	finished_at            TIMESTAMPTZ,
+	CONSTRAINT chk_ingestion_log_status
+		CHECK (status IN ('completed', 'skipped', 'failed'))
+);
+
 -- Analytics schema (destination for 3NF dbt models)
 CREATE SCHEMA IF NOT EXISTS analytics;
