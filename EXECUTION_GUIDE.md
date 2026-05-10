@@ -1,380 +1,142 @@
 # Execution Guide: Data Jobs Pipeline
 
-Complete step-by-step guide to execute the entire pipeline from Phase 1 through Phase 3.
+This file is a practical runbook. The README is the source of truth for architecture, design decisions, and the OLAP next step.
 
 ## Prerequisites
 
-- **Docker**: Version 20.10+ (with Compose)
-- **Python**: 3.10+
-- **Git**: For cloning and version control
-- **PostgreSQL Client** (optional): For manual SQL queries
+- Docker Desktop running
+- Git
+- Python 3.11
+- PostgreSQL client, if you want to run manual SQL checks
 
-## Phase 0-1: Infrastructure Setup
-
-### Step 1: Start Docker Services
+## 1. Bring Up Infrastructure
 
 ```bash
-cd data-jobs-pipeline
-
-# Start PostgreSQL and pgAdmin
 docker compose up -d postgres_pipeline postgres_airflow pgadmin
-
-# Verify services are running
 docker compose ps
 ```
 
-**Expected Output**:
-```
-NAME                  STATUS
-postgres_pipeline     Up (healthy)
-postgres_airflow      Up (healthy)
-pgadmin               Up
-```
+Expected services:
+- `postgres_pipeline`
+- `postgres_airflow`
+- `pgadmin`
 
-### Step 2: Initialize Database Schema
+## 2. Initialize PostgreSQL Schemas
 
 ```bash
-# Apply DDL for raw and analytics schemas
-docker compose exec postgres_pipeline psql \
-  -U postgres \
-  -d jobs_db \
-  -f /schema/schema.sql
-```
-
-**Verify**:
-```bash
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -f schema/schema.sql
 docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "\dn"
 ```
 
-Expected schemas: `public`, `raw`, `analytics`
+Expected schemas:
+- `raw`
+- `analytics`
+- `public`
 
-## Phase 2: Data Ingestion
+## 3. Run Ingestion
 
-### Step 3: Install Python Dependencies
+Local run:
 
-```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\Activate.ps1
-
-# Activate (macOS/Linux)
-source .venv/bin/activate
-
-# Install packages
-pip install -r requirements.txt
-```
-
-### Step 4: Verify Environment Configuration
-
-```bash
-# Check .env file has all required variables
-cat .env
-```
-
-**Required**:
-- `POSTGRES_USER=postgres`
-- `POSTGRES_PASSWORD=postgres`
-- `DB_HOST=localhost` (or `postgres_pipeline` if using Docker host)
-- `DB_PORT=5432`
-- `DB_NAME=jobs_db`
-- `CSV_PATH=data/data_jobs.csv`
-
-### Step 5: Run Ingestion Tests
-
-```bash
-pytest tests/ -v
-```
-
-**Expected**: All tests pass (8+ tests)
-
-### Step 6: Load CSV Data
-
-**Option A: Full dataset** (~785k rows, ~30-60 seconds)
 ```bash
 python -m ingestion.ingest
 ```
 
-**Option B: Sample run** (10,000 rows)
+Smoke run:
+
 ```bash
-INGEST_MAX_ROWS=10000 python -m ingestion.ingest
+INGEST_MAX_ROWS=500 python -m ingestion.ingest
 ```
 
-**PowerShell equivalent**:
+PowerShell:
+
 ```powershell
-$env:INGEST_MAX_ROWS=10000
+$env:INGEST_MAX_ROWS=500
 python -m ingestion.ingest
 ```
 
-### Step 7: Validate Raw Data
+Validate raw data:
 
 ```bash
-# Row count
-docker compose exec postgres_pipeline psql \
-  -U postgres -d jobs_db \
-  -c "SELECT count(*) FROM raw.jobs;"
-
-# Sample records with skills
-docker compose exec postgres_pipeline psql \
-  -U postgres -d jobs_db \
-  -c "SELECT id, company_name, job_title, job_skills FROM raw.jobs LIMIT 3;"
-
-# Ingestion log
-docker compose exec postgres_pipeline psql \
-  -U postgres -d jobs_db \
-  -c "SELECT file_md5, status, total_rows, inserted_rows FROM raw.ingestion_log LIMIT 5;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM raw.jobs;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT file_md5, status, total_rows, inserted_rows, parse_warnings FROM raw.ingestion_log ORDER BY finished_at DESC LIMIT 5;"
 ```
 
-**Expected**:
-- raw.jobs: 785,741 rows (or 10,000 if sample)
-- ingestion_log: 1 row with status='completed'
-
-## Phase 3: Data Modeling with dbt
-
-### Step 8: Install dbt
-
-```bash
-pip install dbt-postgres
-```
-
-### Step 9: Verify dbt Configuration
+## 4. Run dbt
 
 ```bash
 cd dbt
-
-# Check profiles.yml exists and is valid
-dbt debug --profiles-dir .
-```
-
-**Expected Output**:
-```
-Connection test: [ok]
-All checks passed!
-```
-
-### Step 10: Validate dbt Models
-
-```bash
-# Parse all models to check syntax
-dbt parse
-```
-
-**Expected**: No compilation errors
-
-### Step 11: Build 3NF Models
-
-**Option A: Full build** (includes tests)
-```bash
+dbt debug
 dbt build
 ```
 
-**Option B: Run models only** (faster, no tests)
-```bash
-dbt run
-```
-
-**Option C: Dry run** (preview execution plan)
-```bash
-dbt run --dry-run
-```
-
-### Step 12: Run Quality Tests
+Tests only:
 
 ```bash
 dbt test
 ```
 
-**Expected**: All tests pass (uniqueness, not-null, relationships)
-
-### Step 12.1: Focused Validation for Company and Job Posting Changes
-
-When validating changes around `company` or `job_posting`, include `job_skill` in the selected graph to avoid testing stale bridge data:
-
-```bash
-dbt run --select job_skill
-dbt test --select relationships_job_skill_job_id__job_id__ref_job_posting_
-dbt build --select company job_posting job_skill
-```
-
-Why this matters:
-- `job_posting` enforces mandatory company presence (null/blank company excluded)
-- `job_skill` must be rebuilt with the same population scope to avoid orphan `job_id` values
-
-### Step 13: Generate Documentation
+Docs:
 
 ```bash
 dbt docs generate
 dbt docs serve
 ```
 
-Open browser: `http://localhost:8000`
-
-## Post-Execution Validation
-
-### Query Results from Core Tables
+## 5. Run Airflow
 
 ```bash
-# From your terminal (assuming psql is available)
-psql -h localhost -U postgres -d jobs_db -c "
-SELECT 
-  (SELECT COUNT(*) FROM staging.stg_raw_jobs) as deduplicated_jobs,
-  (SELECT COUNT(*) FROM core.company) as companies,
-  (SELECT COUNT(*) FROM core.skill) as skills,
-  (SELECT COUNT(*) FROM core.job_posting) as job_postings,
-  (SELECT COUNT(*) FROM marts.job_skill) as job_skill_assignments;
-"
-```
-
-**Expected Output**:
-```
- deduplicated_jobs | companies | skills  | job_postings | job_skill_assignments
--------------------+-----------+---------+--------------+---------------------
-         785700    |     6726  | 5500    |    785700    |       2500000
-```
-
-### Deduplication Verification
-
-```bash
-psql -h localhost -U postgres -d jobs_db -c "
-SELECT 
-  COUNT(*) as raw_count,
-  COUNT(DISTINCT business_key) as unique_business_keys,
-  (COUNT(*) - COUNT(DISTINCT business_key)) as duplicates_collapsed
-FROM staging.stg_raw_jobs;
-"
-```
-
-**Expected**:
-- raw_count: ~785,700
-- unique_business_keys: ~785,700
-- duplicates_collapsed: ~200
-
-### FK Integrity Check
-
-```bash
-psql -h localhost -U postgres -d jobs_db -c "
-SELECT 
-  COUNT(*) as total_postings,
-  COUNT(CASE WHEN company_id IS NULL THEN 1 END) as null_company_fks
-FROM core.job_posting;
-"
-```
-
-**Expected**: null_company_fks = 0
-
-## Troubleshooting
-
-### Docker Service Won't Start
-
-```bash
-# Check Docker daemon
-docker ps
-
-# View service logs
-docker compose logs postgres_pipeline
-
-# Restart services
-docker compose restart postgres_pipeline
-```
-
-### Ingestion Fails with "Connection refused"
-
-```bash
-# Ensure Docker services are running
+docker compose up -d airflow-init
+docker compose up -d airflow-scheduler airflow-webserver
 docker compose ps
-
-# Check host connectivity
-ping localhost
-# or
-ping postgres_pipeline
-
-# Update .env if using container hostname
-DB_HOST=postgres_pipeline  # Instead of localhost
 ```
 
-### dbt Fails with "Database 'jobs_db' does not exist"
+Manual DAG run:
 
 ```bash
-# Create database manually
-docker compose exec postgres_pipeline createdb -U postgres jobs_db
-
-# Or via psql
-docker compose exec postgres_pipeline psql -U postgres -c "CREATE DATABASE jobs_db;"
+docker compose exec airflow-webserver airflow dags test data_jobs_pipeline 2026-05-10
 ```
 
-### dbt Test Fails with FK Errors
-
-**Likely cause**: Staging models depend on raw data; ensure Phase 2 ingestion completed.
+Optional logs:
 
 ```bash
-# Verify raw.jobs has data
-docker compose exec postgres_pipeline psql -U postgres -d jobs_db \
-  -c "SELECT COUNT(*) FROM raw.jobs;"
+docker compose logs -f airflow-scheduler
+docker compose logs -f airflow-webserver
 ```
 
-### Performance Issues During dbt Run
-
-- First run can take 2-5 minutes for full dataset
-- If slow, check PostgreSQL logs: `docker compose logs postgres_pipeline`
-- Consider running with sample data first: `INGEST_MAX_ROWS=10000`
-
-## Complete End-to-End Execution (One Script)
+## 6. Validate The Model
 
 ```bash
-#!/bin/bash
-set -e
-
-echo "📦 Phase 0-1: Starting infrastructure..."
-docker compose up -d postgres_pipeline postgres_airflow
-docker compose exec postgres_pipeline psql -U postgres -d jobs_db -f /schema/schema.sql
-
-echo "📥 Phase 2: Running ingestion..."
-source .venv/bin/activate
-python -m ingestion.ingest
-
-echo "🔄 Phase 3: Building dbt models..."
-cd dbt
-dbt build
-dbt test
-dbt docs generate
-
-echo "✅ Pipeline execution complete!"
-echo "📊 View documentation: dbt docs serve"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM core.job_posting;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM marts.job_skill;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM raw.jobs;"
 ```
 
-Save as `run_pipeline.sh` and execute:
+## 7. Run Tests
+
+Unit tests:
+
 ```bash
-chmod +x run_pipeline.sh
-./run_pipeline.sh
+pytest tests/test_parsers.py tests/test_ingest.py -v
 ```
 
-## Expected Execution Times
+DAG tests:
 
-| Phase | Component | Time |
-|-------|-----------|------|
-| 1 | Docker startup | 10-30s |
-| 1 | Schema initialization | <1s |
-| 2 | Python setup | 20-30s |
-| 2 | Ingestion (785k rows) | 30-120s |
-| 2 | Ingestion (10k rows) | 2-5s |
-| 3 | dbt parse | 3-5s |
-| 3 | dbt build (full) | 60-120s |
-| 3 | dbt test | 10-20s |
-| 3 | Documentation | 5-10s |
-| **Total** | **Full pipeline** | **3-5 minutes** |
+```bash
+pytest tests/test_dag.py -v
+```
 
-## Next Steps After Execution
+If Airflow is not installed on the host, run the DAG tests inside the Airflow container:
 
-1. **Review Schema**: Open dbt docs at `localhost:8000` to explore model lineage and definitions
-2. **Query Results**: Use provided SQL validation queries to spot-check data quality
-3. **Add Custom Tests**: Extend `schema.yml` with business rule validations
-4. **Archive Results**: Commit execution logs to Git for audit trail
-5. **Plan Phase 4**: Design aggregated marts or BI-specific views (optional)
+```bash
+docker compose exec airflow-webserver bash -c "cd /opt/airflow/project && pytest tests/test_dag.py -v"
+```
 
-## Support
+## 8. Troubleshooting
 
-For issues or questions:
-- Check logs: `docker compose logs -f postgres_pipeline`
-- Review dbt docs: `https://docs.getdbt.com/`
-- See README.md in each phase directory for detailed explanations
+- If ingestion cannot connect, use `DB_HOST=localhost` outside containers and `DB_HOST=postgres_pipeline` inside Docker.
+- If dbt fails, confirm `schema/schema.sql` was applied and `dbt debug` passes.
+- If Airflow fails, confirm `airflow-init` completed before starting scheduler and webserver.
+
+## 9. Relationship To README
+
+This guide is a short execution checklist. The README contains the detailed explanation of ingestion, 3NF modeling, orchestration, CI/CD, and the OLAP next step.
