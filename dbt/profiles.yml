@@ -1,0 +1,12 @@
+data_jobs_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_POSTGRES_HOST', 'localhost') }}"
+      user: "{{ env_var('DBT_POSTGRES_USER', 'postgres') }}"
+      password: "{{ env_var('DBT_POSTGRES_PASSWORD', 'postgres') }}"
+      port: "{{ env_var('DBT_POSTGRES_PORT', '5432') | int }}"
+      dbname: "{{ env_var('DBT_POSTGRES_DBNAME', 'jobs_db') }}"
+      schema: "{{ env_var('DBT_POSTGRES_SCHEMA', 'staging') }}"
+      threads: 4

@@ -300,11 +300,6 @@ models:
               arguments:
                 to: ref('company')
                 field: company_id
-          - no_orphans_fk:
-              arguments:
-                foreign_key_column: company_id
-                to: ref('company')
-                to_column: company_id
       - name: title_cat_id
         description: FK to job_title_category
         tests:
@@ -333,11 +328,6 @@ models:
               arguments:
                 to: ref('country')
                 field: country_id
-          - no_orphans_fk:
-              arguments:
-                foreign_key_column: country_id
-                to: ref('country')
-                to_column: country_id
       - name: rate_type_id
         description: FK to salary_rate_type
         tests:

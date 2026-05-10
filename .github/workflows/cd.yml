@@ -8,6 +8,14 @@ jobs:
   generate-dbt-docs:
     runs-on: ubuntu-latest
     name: Generate dbt Documentation
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+      DBT_POSTGRES_USER: postgres
+      DBT_POSTGRES_PASSWORD: postgres
+      DBT_POSTGRES_HOST: localhost
+      DBT_POSTGRES_PORT: 5432
+      DBT_POSTGRES_DBNAME: jobs_db
+      DBT_POSTGRES_SCHEMA: analytics
     
     services:
       postgres:
@@ -61,13 +69,6 @@ jobs:
         run: |
           cd dbt
           dbt build --fail-fast
-        env:
-          DBT_POSTGRES_USER: postgres
-          DBT_POSTGRES_PASSWORD: postgres
-          DBT_POSTGRES_HOST: localhost
-          DBT_POSTGRES_PORT: 5432
-          DBT_POSTGRES_DBNAME: jobs_db
-          DBT_POSTGRES_SCHEMA: analytics
       
       - name: Generate dbt docs
         run: |
