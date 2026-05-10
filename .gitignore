@@ -37,6 +37,7 @@ Thumbs.db
 # dbt
 dbt/target/
 dbt/logs/
+dbt/.user.yml
 dbt_project/
 dbt_packages/
 
