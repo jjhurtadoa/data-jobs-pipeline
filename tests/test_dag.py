@@ -42,8 +42,12 @@ def dagbag():
 
 @pytest.fixture(scope="module")
 def pipeline_dag(dagbag):
-    """Return the target DAG object."""
-    dag = dagbag.get_dag(DAG_ID)
+    """Return the target DAG object.
+
+    Use dagbag.dags (in-memory parse result) to avoid hitting Airflow metadata
+    DB in CI, where tables may not be initialized.
+    """
+    dag = dagbag.dags.get(DAG_ID)
     assert dag is not None, f"DAG '{DAG_ID}' not found. Import errors: {dagbag.import_errors}"
     return dag
 
