@@ -20,7 +20,7 @@ An end-to-end data pipeline that ingests raw job posting data from CSV and trans
 
 ```bash
 # 1. Clone and enter the project
-git clone <repo-url>
+git clone https://github.com/jjhurtadoa/data-jobs-pipeline.git
 cd data-jobs-pipeline
 
 # 2. Set up environment variables
@@ -37,10 +37,7 @@ docker compose exec postgres_pipeline psql -U postgres -d jobs_db \
   -c "SELECT COUNT(*) FROM core.job_posting;"
 ```
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Airflow UI | http://localhost:8080 | admin / admin |
-| pgAdmin | http://localhost:5050 | admin@admin.com / admin |
+
 
 ---
 
