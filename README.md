@@ -351,8 +351,151 @@ Expected outcome:
 - No failing reconciliation tests between staging and `job_posting` scope
 - No deprecation warning for top-level generic test arguments in `schema.yml`
 
+## Phase 4: Orchestration with Airflow (Implemented)
+
+Phase 4 introduces **Apache Airflow** for automated, scheduled orchestration of the entire ETL pipeline.
+
+### Architecture Overview
+
+The orchestration stack consists of:
+
+**Services** (added to `docker-compose.yml`):
+1. `airflow-init`: One-time initialization of Airflow metadata database and default user
+2. `airflow-scheduler`: Executes DAGs on schedule and monitors task health
+3. `airflow-webserver`: UI for DAG visualization, manual triggers, and monitoring
+
+**DAG Definition** (`airflow/dags/pipeline_dag.py`):
+- **DAG ID**: `data_jobs_pipeline`
+- **Schedule**: Daily at 03:00 UTC (`0 3 * * *`)
+- **Start Date**: 2026-01-01
+- **Catchup**: Disabled (prevents backfill storms on deployment)
+- **Max Active Runs**: 1 (ensures idempotency, prevents concurrent runs)
+
+### DAG Topology
+
+The DAG implements a **linear 3-stage pipeline**:
+
+```
+ingest_raw_jobs
+       ↓
+dbt_run_models
+       ↓
+dbt_run_tests
+```
+
+| Stage | Task | Operator | Command | Failure Behavior |
+|-------|------|----------|---------|------------------|
+| Ingest | `ingest_raw_jobs` | BashOperator | `python -m ingestion.ingest` | Fail-fast (stops pipeline) |
+| Transform | `dbt_run_models` | BashOperator | `python -m dbt.cli.main run --fail-fast` | Fail-fast (stops pipeline) |
+| Validate | `dbt_run_tests` | BashOperator | `python -m dbt.cli.main test --fail-fast` | Fail-fast (stops pipeline) |
+
+### Technical Decisions
+
+**Why BashOperator?**
+- Simplicity: direct command execution without Airflow operators overhead
+- Maintainability: pipeline logic stays in Python/dbt scripts, not Airflow DAG code
+- Portability: bash commands remain testable outside Airflow
+
+**Why Python Module Invocation for dbt?**
+- `dbt` binary may not be in PATH inside container
+- `python -m dbt.cli.main` is path-independent and works reliably in containerized environments
+- Ensures consistent behavior between local and CI contexts
+
+**Why Separate DB for Airflow Metadata?**
+- Airflow uses SQLAlchemy ORM with specific schema requirements
+- Isolating metadata from business data prevents accidental overwrites
+- Enables independent backup/restore of Airflow state
+
+**Environment Variable Handling**
+- Ingestion task injects database credentials directly (e.g., `DB_HOST`, `DB_USER`, `DB_PASSWORD`)
+- dbt tasks inject `DBT_PROFILES_DIR` to locate the connection profile
+- Container-based execution: `load_dotenv(override=False)` in Python code allows Docker Compose environment to take precedence over local `.env` files
+
+### Setup & Execution
+
+**Start the Airflow stack**:
+```bash
+docker compose up -d airflow-init
+# Wait for init to complete (check logs)
+docker compose up -d airflow-scheduler airflow-webserver
+docker compose ps
+```
+
+**Monitor logs** (optional, for debugging):
+```bash
+docker compose logs -f airflow-scheduler
+docker compose logs -f airflow-webserver
+```
+
+**Access the UI**:
+- URL: `http://localhost:8080`
+- Username: `airflow`
+- Password: `airflow`
+
+**Manually trigger the DAG** (test run):
+```bash
+docker compose exec airflow-webserver airflow dags test data_jobs_pipeline 2026-05-10
+```
+
+**Expected output**:
+- All 3 tasks execute in sequence
+- `dbt_run_tests` passes (14/14 assertions)
+- Logs show successful ingestion, model materialization, and test validation
+
+### DAG Testing
+
+**Unit tests** (`tests/test_dag.py`):
+- Validate DAG structure without running Airflow
+- Cover: no import errors, correct task count, proper dependencies, no cycles
+- Run inside container (Airflow is Linux-only):
+
+```bash
+docker compose exec airflow-webserver bash -c "cd /opt/airflow/project && python -m pytest tests/test_dag.py -v"
+```
+
+Expected: 14/14 PASSED
+
+**Integration test** (manual):
+```bash
+docker compose exec airflow-webserver airflow dags test data_jobs_pipeline <YYYY-MM-DD>
+```
+
+### Validation Queries
+
+**Check Airflow database** (metadata):
+```bash
+docker compose exec postgres_airflow psql -U airflow -d airflow -c "SELECT dag_id, task_id, state, started_date, ended_date FROM task_instance ORDER BY started_date DESC LIMIT 10;"
+```
+
+**Check business database** (pipeline results):
+```bash
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM raw.jobs;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM core.job_posting;"
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COUNT(*) FROM marts.job_skill;"
+```
+
+### Architecture Decisions
+
+**Why Airflow Over Cron?**
+- Visibility: UI shows DAG history, logs, and task status
+- Retry logic: built-in retry configuration (e.g., 1 retry with 5-min delay)
+- Scalability: can extend to multiple tasks/sensors without script management
+- Observability: task dependencies and execution timeline are tracked automatically
+
+**Why Daily Schedule at 03:00 UTC?**
+- Off-peak to avoid contention with peak business hours
+- Allows 24-hour window for incremental reloads (idempotency via file MD5)
+- Provides fresh data by morning business hours
+
+**Why No External Sensors?**
+- File is uploaded manually or via batch process (no need to wait for arrivals)
+- Current scope does not include SLA monitoring or dynamic triggering
+- Can be added in future phases if source data arrives on a known schedule
+
 ### Next Steps
 
 - Monitor dbt test coverage and add custom data quality checks as needed
 - Consider materializing aggregated marts (e.g., skill frequency, salary trends)
 - Implement incremental materialization if processing large data volumes regularly
+- Extend Airflow with alerting (email/Slack on task failure)
+- Implement data quality checks as separate dbt tests for anomaly detection
