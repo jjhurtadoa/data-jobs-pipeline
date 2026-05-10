@@ -3,6 +3,9 @@ Staging model: explode job_skills array into individual skill rows.
 
 This model takes the deduplicated and aggregated job_skills array from stg_raw_jobs
 and creates one row per skill, ready for dimension building and the job_skill bridge table.
+
+No skill_category here: job_skills is a flat list with no grouping.
+Category-aware skills come from stg_job_type_skills_exploded.
 */
 
 with raw_skills as (
@@ -19,8 +22,7 @@ exploded as (
   select
     raw_job_id,
     business_key,
-    trim(skill_value) as skill_name,
-    'core' as skill_category_hint,
+    lower(trim(skill_value)) as skill_name,
     ingested_at
   from raw_skills,
   lateral unnest(job_skills_array) as skill_value
@@ -31,7 +33,6 @@ select
   raw_job_id,
   business_key,
   skill_name,
-  skill_category_hint,
   ingested_at
 from exploded
 where skill_name is not null and skill_name != ''

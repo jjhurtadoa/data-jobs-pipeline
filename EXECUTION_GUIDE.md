@@ -187,6 +187,20 @@ dbt test
 
 **Expected**: All tests pass (uniqueness, not-null, relationships)
 
+### Step 12.1: Focused Validation for Company and Job Posting Changes
+
+When validating changes around `company` or `job_posting`, include `job_skill` in the selected graph to avoid testing stale bridge data:
+
+```bash
+dbt run --select job_skill
+dbt test --select relationships_job_skill_job_id__job_id__ref_job_posting_
+dbt build --select company job_posting job_skill
+```
+
+Why this matters:
+- `job_posting` enforces mandatory company presence (null/blank company excluded)
+- `job_skill` must be rebuilt with the same population scope to avoid orphan `job_id` values
+
 ### Step 13: Generate Documentation
 
 ```bash

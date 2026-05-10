@@ -110,6 +110,24 @@ This phase transforms raw job posting data into a **Third Normal Form (3NF)** re
 - **Salary fields**: Sparse (95% NULL); no dependency violation
 - **Boolean flags**: Direct posting attributes; no transitive dependencies
 
+### Final Modeling Decisions Applied
+
+1. **Mandatory company dimension for core posting grain**
+  - Rows with null/blank `company_name` are excluded from `core.company` and `core.job_posting`.
+  - This enforces non-null FK integrity in `job_posting.company_id`.
+
+2. **Population alignment between central entity and bridge**
+  - `marts.job_skill` only includes rows whose `job_id` exists in `core.job_posting`.
+  - This prevents orphan keys in the many-to-many bridge.
+
+3. **Staging-to-core reconciliation aligned to 3NF policy**
+  - The `job_posting_matches_staging` check compares only staging rows that satisfy the company rule.
+  - This avoids false negatives from intentionally excluded source rows.
+
+4. **dbt generic test arguments updated**
+  - Generic test arguments were moved under `arguments` in `schema.yml`.
+  - This removes deprecation warnings and keeps project syntax future-safe.
+
 ---
 
 ## Setup & Execution
@@ -157,6 +175,23 @@ dbt test
 # Test specific model
 dbt test -s job_posting
 ```
+
+### Focused Validation Checklist (After Core/Bridge Changes)
+
+```bash
+# Rebuild bridge with current core population
+dbt run --select job_skill
+
+# Verify no orphan bridge keys
+dbt test --select relationships_job_skill_job_id__job_id__ref_job_posting_
+
+# Validate selected graph used during troubleshooting
+dbt build --select company job_posting job_skill
+```
+
+Expected:
+- 0 failing rows in `relationships_job_skill_job_id__job_id__ref_job_posting_`
+- 0 failing rows in `job_posting_matches_staging`
 
 ### Generate Docs
 

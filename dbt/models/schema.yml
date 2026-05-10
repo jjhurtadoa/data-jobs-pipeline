@@ -38,9 +38,9 @@ sources:
           - name: salary_hour_avg
             description: Average hourly rate
           - name: job_skills
-            description: Job skills as Python list serialized to text
+            description: Job skills as JSONB array
           - name: job_type_skills
-            description: Job skills grouped by category (Python dict serialized to text)
+            description: Job skills grouped by category as JSONB object
           - name: ingested_at
             description: When the record was ingested to raw.jobs
 
@@ -81,7 +81,11 @@ models:
       - name: job_skills_array
         description: Deduplicated array of skills
       - name: job_type_skills
-        description: Grouped skills (serialized)
+        description: Grouped skills as merged JSONB object across duplicate postings
+      - name: ingested_at
+        description: Timestamp when record was ingested from raw source
+        tests:
+          - dates_not_future
       - name: company_name
         description: Employer name
 
@@ -97,10 +101,12 @@ models:
           - not_null
       - name: raw_job_id
         description: Reference to stg_raw_jobs
+      - name: business_key
+        description: Deduplication key inherited from stg_raw_jobs
       - name: skill_name
         description: Skill text
-      - name: skill_category_hint
-        description: Default category for ungrouped skills
+      - name: ingested_at
+        description: Ingestion timestamp from raw source
 
   - name: stg_job_type_skills_exploded
     description: |
@@ -109,6 +115,9 @@ models:
     columns:
       - name: grouped_skill_assignment_id
         description: Unique ID for this grouped skill assignment
+        tests:
+          - unique
+          - not_null
       - name: raw_job_id
         description: Reference to stg_raw_jobs
       - name: skill_name
@@ -283,69 +292,92 @@ models:
         description: Average annual salary
       - name: salary_hour_avg
         description: Average hourly rate
-      - name: salary_month_avg
-        description: Average monthly salary (computed from annual/hourly)
       - name: company_id
         description: FK to company
         tests:
+          - not_null
           - relationships:
-              to: ref('company')
-              field: company_id
+              arguments:
+                to: ref('company')
+                field: company_id
+          - no_orphans_fk:
+              arguments:
+                foreign_key_column: company_id
+                to: ref('company')
+                to_column: company_id
       - name: title_cat_id
         description: FK to job_title_category
         tests:
           - relationships:
-              to: ref('job_title_category')
-              field: title_cat_id
+              arguments:
+                to: ref('job_title_category')
+                field: title_cat_id
       - name: schedule_type_id
         description: FK to schedule_type
         tests:
           - relationships:
-              to: ref('schedule_type')
-              field: schedule_type_id
+              arguments:
+                to: ref('schedule_type')
+                field: schedule_type_id
       - name: platform_id
         description: FK to platform
         tests:
           - relationships:
-              to: ref('platform')
-              field: platform_id
+              arguments:
+                to: ref('platform')
+                field: platform_id
       - name: country_id
         description: FK to country
         tests:
           - relationships:
-              to: ref('country')
-              field: country_id
+              arguments:
+                to: ref('country')
+                field: country_id
+          - no_orphans_fk:
+              arguments:
+                foreign_key_column: country_id
+                to: ref('country')
+                to_column: country_id
       - name: rate_type_id
         description: FK to salary_rate_type
         tests:
           - relationships:
-              to: ref('salary_rate_type')
-              field: rate_type_id
+              arguments:
+                to: ref('salary_rate_type')
+                field: rate_type_id
 
   - name: job_skill
     description: |
       Mart table: many-to-many bridge between job postings and skills.
       PK: (job_id, skill_id, skill_cat_id)
       Resolves the M:N relationship and normalizes 1NF violations.
+    tests:
+      - composite_key_unique:
+          arguments:
+            column_names: [job_id, skill_id, skill_cat_id]
     columns:
       - name: job_id
         description: FK to job_posting
         tests:
           - not_null
           - relationships:
-              to: ref('job_posting')
-              field: job_id
+              arguments:
+                to: ref('job_posting')
+                field: job_id
       - name: skill_id
         description: FK to skill
         tests:
           - not_null
           - relationships:
-              to: ref('skill')
-              field: skill_id
+              arguments:
+                to: ref('skill')
+                field: skill_id
       - name: skill_cat_id
-        description: FK to skill_category
+        description: Optional FK to skill_category (NULL when source skill has no category)
         tests:
-          - not_null
           - relationships:
-              to: ref('skill_category')
-              field: skill_cat_id
+              arguments:
+                to: ref('skill_category')
+                field: skill_cat_id
+              config:
+                where: "skill_cat_id is not null"

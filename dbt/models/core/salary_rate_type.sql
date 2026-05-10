@@ -5,10 +5,15 @@ One row per unique salary rate type (e.g., 'year', 'hour', 'month').
 This is a controlled vocabulary; values come from the raw data.
 */
 
+with base as (
+  select nullif(lower(trim(salary_rate)), '') as salary_rate
+  from {{ ref('stg_raw_jobs') }}
+)
+
 select
   md5(salary_rate) as rate_type_id,
   salary_rate as rate_name,
-  current_timestamp() as created_at
-from {{ ref('stg_raw_jobs') }}
+  current_timestamp as created_at
+from base
 where salary_rate is not null
 group by salary_rate

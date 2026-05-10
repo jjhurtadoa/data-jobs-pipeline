@@ -7,7 +7,7 @@ profile: 'data-jobs-pipeline'
 model-paths: ['models']
 analysis-paths: ['analyses']
 test-paths: ['tests']
-data-paths: ['data']
+seed-paths: ['data']
 macro-paths: ['macros']
 snapshot-paths: ['snapshots']
 target-path: 'target'
@@ -26,9 +26,6 @@ models:
     marts:
       materialized: table
       schema: marts
-
-seeds:
-  quote_columns: false
 
 on-run-start:
   - "{{ log('Starting dbt run for data_jobs_pipeline', info=true) }}"

@@ -317,9 +317,42 @@ HAVING COUNT(*) > 1;
 - Survives incremental reloads
 - Easier to audit than row-level hashing
 
+**Strict 3NF Policy for Company Dimension**
+- `company` is treated as a mandatory dimension for `job_posting`
+- Rows with null/blank `company_name` are excluded from `company` and `job_posting`
+- Trade-off: a small number of source records can be dropped to preserve non-null PK/FK integrity
+- Rationale: prioritizes relational consistency and referential integrity for assessment requirements
+
+**Bridge Consistency Rule (`job_skill` vs `job_posting`)**
+- `job_skill` only keeps rows whose `job_id` exists in `job_posting`
+- Rationale: avoids orphan records in the M:N bridge when a posting is excluded by 3NF rules
+- Implementation note: filtering is enforced in the mart model via inner join to valid posting IDs
+
+### dbt Validation Protocol (Recommended)
+
+Use this sequence after changing models or tests:
+
+```bash
+# 1) Rebuild bridge if job posting or skill logic changed
+dbt run --select job_skill
+
+# 2) Validate the critical FK relationship explicitly
+dbt test --select relationships_job_skill_job_id__job_id__ref_job_posting_
+
+# 3) Build focused dependency graph for company and postings
+dbt build --select company job_posting job_skill
+
+# 4) Full regression (optional but recommended before delivery)
+dbt build
+```
+
+Expected outcome:
+- No failing relationship tests between `job_skill.job_id` and `job_posting.job_id`
+- No failing reconciliation tests between staging and `job_posting` scope
+- No deprecation warning for top-level generic test arguments in `schema.yml`
+
 ### Next Steps
 
 - Monitor dbt test coverage and add custom data quality checks as needed
 - Consider materializing aggregated marts (e.g., skill frequency, salary trends)
 - Implement incremental materialization if processing large data volumes regularly
-```
