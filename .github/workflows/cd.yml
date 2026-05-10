@@ -1,0 +1,79 @@
+name: CD - Generate Artifacts
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  generate-dbt-docs:
+    runs-on: ubuntu-latest
+    name: Generate dbt Documentation
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jobs_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas psycopg[binary]
+      
+      - name: Initialize database schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d jobs_db -f schema/schema.sql
+      
+      - name: Ingest sample data
+        run: |
+          python -m ingestion.ingest
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: jobs_db
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          CSV_PATH: data/data_jobs.csv
+          LOG_LEVEL: INFO
+      
+      - name: Run dbt
+        run: |
+          cd dbt
+          dbt build --fail-fast
+        env:
+          DBT_POSTGRES_USER: postgres
+          DBT_POSTGRES_PASSWORD: postgres
+          DBT_POSTGRES_HOST: localhost
+          DBT_POSTGRES_PORT: 5432
+          DBT_POSTGRES_DBNAME: jobs_db
+          DBT_POSTGRES_SCHEMA: analytics
+      
+      - name: Generate dbt docs
+        run: |
+          cd dbt
+          dbt docs generate
+      
+      - name: Upload dbt docs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs
+          path: dbt/target/
+          retention-days: 30

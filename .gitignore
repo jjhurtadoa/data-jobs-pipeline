@@ -6,10 +6,16 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+dist/
+build/
+
+# Logs
+*.log
+logs/
 
 # Environment
 .env
-.env.*
+.env.*.local
 !.env.example
 
 # Data
@@ -20,11 +26,25 @@ data/*.csv
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 Thumbs.db
 .DS_Store
 
 # dbt
-target/
-logs/
+dbt/target/
+dbt/logs/
+dbt_project/
+dbt_packages/
+
+# Airflow
+airflow/logs/
+airflow_home/
+airflow.db
+
+# Project artifacts
+Entity-Relationship Diagram.svg
+

@@ -1,0 +1,158 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint (ruff)
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install ruff
+        run: pip install ruff
+      
+      - name: Lint with ruff
+        run: ruff check . --extend-exclude .venv,dbt_project
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests (pytest)
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-airflow.txt
+      
+      - name: Run unit tests
+        run: pytest tests/test_parsers.py tests/test_ingest.py -v
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: jobs_db
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          LOG_LEVEL: INFO
+
+  dbt-tests:
+    runs-on: ubuntu-latest
+    name: dbt Tests (with PostgreSQL)
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jobs_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-postgres pandas psycopg[binary]
+      
+      - name: Initialize database schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d jobs_db -f schema/schema.sql
+      
+      - name: Ingest sample data
+        run: |
+          python -m ingestion.ingest
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: jobs_db
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          CSV_PATH: data/data_jobs.csv
+          LOG_LEVEL: INFO
+      
+      - name: Run dbt build
+        run: |
+          cd dbt
+          dbt build --fail-fast
+        env:
+          DBT_POSTGRES_USER: postgres
+          DBT_POSTGRES_PASSWORD: postgres
+          DBT_POSTGRES_HOST: localhost
+          DBT_POSTGRES_PORT: 5432
+          DBT_POSTGRES_DBNAME: jobs_db
+          DBT_POSTGRES_SCHEMA: analytics
+
+  airflow-dag-tests:
+    runs-on: ubuntu-latest
+    name: Airflow DAG Tests
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-airflow.txt
+      
+      - name: Run DAG structure tests
+        run: pytest tests/test_dag.py -v
+        env:
+          AIRFLOW_HOME: /tmp/airflow
+
+  summary:
+    runs-on: ubuntu-latest
+    name: CI Summary
+    needs: [ lint, unit-tests, dbt-tests, airflow-dag-tests ]
+    if: always()
+    
+    steps:
+      - name: Check job status
+        run: |
+          if [ "${{ needs.lint.result }}" = "failure" ] || \
+             [ "${{ needs.unit-tests.result }}" = "failure" ] || \
+             [ "${{ needs.dbt-tests.result }}" = "failure" ] || \
+             [ "${{ needs.airflow-dag-tests.result }}" = "failure" ]; then
+            echo "❌ CI Pipeline failed"
+            exit 1
+          else
+            echo "✅ CI Pipeline passed"
+          fi

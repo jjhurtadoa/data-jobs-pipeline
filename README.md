@@ -499,3 +499,118 @@ docker compose exec postgres_pipeline psql -U postgres -d jobs_db -c "SELECT COU
 - Implement incremental materialization if processing large data volumes regularly
 - Extend Airflow with alerting (email/Slack on task failure)
 - Implement data quality checks as separate dbt tests for anomaly detection
+
+## Phase 5: Continuous Integration & Deployment with GitHub Actions
+
+### CI/CD Architecture
+
+Two workflows are configured in `.github/workflows/`:
+
+**`ci.yml`** (Continuous Integration):
+- Triggers on: `push` to `main`/`develop`, `pull_request` to `main`/`develop`
+- Runs on: `ubuntu-latest` with Python 3.11
+
+**`cd.yml`** (Continuous Deployment):
+- Triggers on: `push` to `main`
+- Generates and uploads dbt documentation artifacts
+
+### CI Pipeline Stages
+
+The CI pipeline runs **4 parallel job groups** followed by a summary:
+
+| Job | Purpose | Tools | Command |
+|-----|---------|-------|---------|
+| **Lint** | Static code analysis | ruff | `ruff check .` |
+| **Unit Tests** | Parser and ingestion logic | pytest | `pytest tests/test_parsers.py tests/test_ingest.py` |
+| **dbt Tests** | Data models and transformations | dbt + PostgreSQL | `dbt build --fail-fast` in containerized DB |
+| **Airflow DAG Tests** | DAG structure validation | pytest + airflow | `pytest tests/test_dag.py` |
+| **Summary** | Report job status | bash | Exit 1 if any job failed |
+
+### Key Design Decisions
+
+**Why Parallel Jobs?**
+- Lint, unit tests, and DAG tests are independent and run immediately
+- dbt tests require PostgreSQL but don't block the others
+- Reduces total CI time from sequential execution
+
+**PostgreSQL Service in dbt Job**
+- Uses Docker service `postgres:16` with health checks
+- Schema is initialized (`schema/schema.sql`) before running ingestion
+- Sample data is loaded via `ingestion.ingest` for realistic test conditions
+- dbt connects via hardcoded localhost (suitable for CI)
+
+**dbt Environment Variables in CI**
+- Uses `DBT_POSTGRES_*` variables (not container env injection)
+- Allows CI to override profile without modifying code
+- Profile path: `dbt/profiles.yml` (auto-discovered)
+
+**Airflow DAG Tests in CI**
+- Runs on isolated runner (no Docker Compose needed)
+- Skip gracefully on Windows (fcntl not available)
+- Only validates DAG structure, not integration
+
+**Artifact Retention**
+- dbt documentation is uploaded with 30-day retention
+- Available under GitHub Actions > Artifacts after each main push
+- Can be used for documentation sites or offline review
+
+### Running Locally (Simulating CI)
+
+To simulate the CI pipeline locally:
+
+#### 1. Lint
+```bash
+pip install ruff
+ruff check . --extend-exclude .venv,dbt_project
+```
+
+#### 2. Unit Tests
+```bash
+pytest tests/test_parsers.py tests/test_ingest.py -v
+```
+
+#### 3. dbt Tests
+```bash
+# Start PostgreSQL
+docker compose up -d postgres_pipeline
+
+# Initialize schema
+docker compose exec postgres_pipeline psql -U postgres -d jobs_db -f schema/schema.sql
+
+# Ingest sample data
+python -m ingestion.ingest
+
+# Run dbt
+cd dbt && dbt build --fail-fast
+```
+
+#### 4. Airflow DAG Tests
+```bash
+pytest tests/test_dag.py -v
+```
+
+### Troubleshooting CI Failures
+
+**Lint errors:**
+```bash
+ruff check . --fix  # Auto-fix
+```
+
+**Unit test failures:**
+- Check test logs in GitHub Actions UI
+- Verify database fixtures in `tests/conftest.py`
+
+**dbt test failures:**
+- Check if schema initialization succeeded
+- Verify ingestion log for data load errors
+- Run locally: `cd dbt && dbt build --debug`
+
+**Airflow DAG test failures:**
+- Check if `tests/test_dag.py` imports correctly
+- Ensure `airflow/dags/pipeline_dag.py` has valid Python syntax
+
+### Next Steps
+
+- Monitor CI runs and fix any failures before merging to `main`
+- Consider adding test coverage metrics (coverage.py)
+- Extend CD pipeline for automated deployments if needed
