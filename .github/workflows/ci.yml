@@ -85,7 +85,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install dbt-postgres pandas psycopg[binary]
+          pip install -r requirements.txt
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       
       - name: Initialize database schema
         run: |
@@ -131,7 +134,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-airflow.txt
+          pip install -r airflow/requirements-airflow.txt
       
       - name: Run DAG structure tests
         run: pytest tests/test_dag.py -v
