@@ -2,7 +2,7 @@ name: 'data_jobs_pipeline'
 version: '1.0.0'
 config-version: 2
 
-profile: 'data-jobs-pipeline'
+profile: 'data_jobs_pipeline'
 
 model-paths: ['models']
 analysis-paths: ['analyses']

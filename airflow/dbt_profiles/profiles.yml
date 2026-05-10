@@ -1,0 +1,12 @@
+data_jobs_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres_pipeline
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: jobs_db
+      schema: staging
+      threads: 4
