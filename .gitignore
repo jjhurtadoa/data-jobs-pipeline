@@ -8,6 +8,7 @@ __pycache__/
 htmlcov/
 dist/
 build/
+uv.lock
 
 # Logs
 *.log
