@@ -542,12 +542,13 @@ The CI pipeline runs **4 parallel job groups** followed by a summary:
 **dbt Environment Variables in CI**
 - Uses `DBT_POSTGRES_*` variables (not container env injection)
 - Allows CI to override profile without modifying code
-- Profile path: `dbt/profiles.yml` (auto-discovered)
+- Profile path: `dbt/profiles.yml` via explicit `DBT_PROFILES_DIR`
 
 **Airflow DAG Tests in CI**
 - Runs on isolated runner (no Docker Compose needed)
 - Skip gracefully on Windows (fcntl not available)
 - Only validates DAG structure, not integration
+- Uses in-memory DagBag parsing to avoid dependency on Airflow metadata DB tables
 
 **Artifact Retention**
 - dbt documentation is uploaded with 30-day retention

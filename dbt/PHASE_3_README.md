@@ -137,7 +137,7 @@ This phase transforms raw job posting data into a **Third Normal Form (3NF)** re
 1. PostgreSQL running with `jobs_db` database
 2. Raw ingestion completed (`raw.jobs` populated)
 3. dbt installed: `pip install dbt-postgres`
-4. dbt profile configured in `~/.dbt/profiles.yml`
+4. dbt profile configured in `dbt/profiles.yml` and loaded with `DBT_PROFILES_DIR`
 
 ### Installation
 

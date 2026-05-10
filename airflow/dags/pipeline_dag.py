@@ -27,22 +27,14 @@ with DAG(
 	ingest_raw_jobs = BashOperator(
 		task_id="ingest_raw_jobs",
 		bash_command="cd /opt/airflow/project && python -m ingestion.ingest",
-		env={
-			"DB_HOST": "postgres_pipeline",
-			"DB_PORT": "5432",
-			"DB_NAME": "jobs_db",
-			"DB_USER": "postgres",
-			"DB_PASSWORD": "postgres",
-			"CSV_PATH": "data/data_jobs.csv",
-			"LOG_LEVEL": "INFO",
-		},
+		append_env=True,
 	)
 
 	dbt_run_models = BashOperator(
 		task_id="dbt_run_models",
 		bash_command="cd /opt/airflow/project/dbt && python -m dbt.cli.main run --fail-fast",
 		env={
-			"DBT_PROFILES_DIR": "/opt/airflow/dbt_profiles",
+			"DBT_PROFILES_DIR": "/opt/airflow/project/dbt",
 		},append_env=True,
 	)
 
@@ -50,7 +42,7 @@ with DAG(
 		task_id="dbt_run_tests",
 		bash_command="cd /opt/airflow/project/dbt && python -m dbt.cli.main test --fail-fast",
 		env={
-			"DBT_PROFILES_DIR": "/opt/airflow/dbt_profiles",
+			"DBT_PROFILES_DIR": "/opt/airflow/project/dbt",
 		},append_env=True,
 	)
 

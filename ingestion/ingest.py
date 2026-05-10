@@ -41,7 +41,7 @@ class IngestionStats:
 
 
 def main() -> None:
-	load_dotenv(override=True)
+	load_dotenv(override=False)
 	configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 
 	csv_path = os.getenv("CSV_PATH", "data/data_jobs.csv")

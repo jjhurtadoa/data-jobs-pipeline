@@ -144,7 +144,7 @@ pip install dbt-postgres
 cd dbt
 
 # Check profiles.yml exists and is valid
-dbt debug
+dbt debug --profiles-dir .
 ```
 
 **Expected Output**:

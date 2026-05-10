@@ -53,9 +53,21 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
       AIRFLOW_HOME: /opt/airflow
       PYTHONPATH: /opt/airflow/project
+      DB_HOST: postgres_pipeline
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CSV_PATH: data/data_jobs.csv
+      LOG_LEVEL: ${LOG_LEVEL}
+      DBT_POSTGRES_HOST: postgres_pipeline
+      DBT_POSTGRES_PORT: 5432
+      DBT_POSTGRES_DBNAME: ${POSTGRES_DB}
+      DBT_POSTGRES_USER: ${POSTGRES_USER}
+      DBT_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_POSTGRES_SCHEMA: staging
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/dbt_profiles:/opt/airflow/dbt_profiles
       - ./:/opt/airflow/project
     depends_on:
       postgres_airflow:
@@ -82,9 +94,21 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
       AIRFLOW_HOME: /opt/airflow
       PYTHONPATH: /opt/airflow/project
+      DB_HOST: postgres_pipeline
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CSV_PATH: data/data_jobs.csv
+      LOG_LEVEL: ${LOG_LEVEL}
+      DBT_POSTGRES_HOST: postgres_pipeline
+      DBT_POSTGRES_PORT: 5432
+      DBT_POSTGRES_DBNAME: ${POSTGRES_DB}
+      DBT_POSTGRES_USER: ${POSTGRES_USER}
+      DBT_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_POSTGRES_SCHEMA: staging
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/dbt_profiles:/opt/airflow/dbt_profiles
       - ./:/opt/airflow/project
     depends_on:
       postgres_airflow:
@@ -109,9 +133,21 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "True"
       AIRFLOW_HOME: /opt/airflow
       PYTHONPATH: /opt/airflow/project
+      DB_HOST: postgres_pipeline
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CSV_PATH: data/data_jobs.csv
+      LOG_LEVEL: ${LOG_LEVEL}
+      DBT_POSTGRES_HOST: postgres_pipeline
+      DBT_POSTGRES_PORT: 5432
+      DBT_POSTGRES_DBNAME: ${POSTGRES_DB}
+      DBT_POSTGRES_USER: ${POSTGRES_USER}
+      DBT_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DBT_POSTGRES_SCHEMA: staging
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/dbt_profiles:/opt/airflow/dbt_profiles
       - ./:/opt/airflow/project
     depends_on:
       postgres_airflow:
